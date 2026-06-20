@@ -4,12 +4,12 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Video Player - MediaSync</title>
+    <title>Media Player - MediaSync</title>
     <link rel="stylesheet" href="media_sync.css"></link>
 </head>
 
 <body>
-    <h2>Video Player - MediaSync</h2>
+    <h2>Media Player - MediaSync</h2>
 
     <!-- Connection -->
     <div class="status-row">
@@ -23,14 +23,14 @@
         <input type="file" id="fileInput">
         <button class="file-btn" id="videoBtn">Choose Video</button>
         <button class="file-btn" id="audioBtn">Choose Audio</button>
-        <span class="file-info" id="fileInfo">No file selected</span>
+        <span class="file-info" id="fileInfo">No media file selected</span>
     </div>
 
     <!-- Media -->
     <div class="media-wrap">
         <video id="video" controls playsinline></video>
         <audio id="audio" controls></audio>
-        <div class="no-video" id="noVideoMsg">Select a media file to begin</div>
+        <div class="no-media" id="noMediaMsg">Select a media file to begin</div>
     </div>
 
     <!-- Offset & Tolerance -->
@@ -72,7 +72,7 @@
         var fileInfo = document.getElementById('fileInfo');
         var video = document.getElementById('video');
         var audio = document.getElementById('audio');
-        var noVideoMsg = document.getElementById('noVideoMsg');
+        var noMediaMsg = document.getElementById('noMediaMsg');
         var offsetInput = document.getElementById('offsetInput');
         var toleranceInput = document.getElementById('toleranceInput');
         var advHeader = document.getElementById('advHeader');
@@ -199,7 +199,7 @@
             activeMedia.style.display = 'block';
 
             fileInfo.textContent = file.name + ' (Loading)';
-            noVideoMsg.style.display = 'none';
+            noMediaMsg.style.display = 'none';
 
             applyConfigForFile(file.name);
 

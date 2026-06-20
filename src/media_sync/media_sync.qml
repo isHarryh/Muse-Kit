@@ -7,7 +7,7 @@ import Muse.UiComponents
 
 MuseScore {
     title: "MuseKit: Media Sync"
-    description: "Plugin included in MuseKit. MediaSync can synchronizes MuseScore playback with a browser-based video player via WebSocket technique."
+    description: "MediaSync can synchronize MuseScore playback with a browser-based media player via WebSocket. (This plugin is a member of MuseKit.) "
     version: "1.0"
 
     requiresScore: true

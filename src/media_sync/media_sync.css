@@ -130,7 +130,7 @@ audio {
     width: 100%;
 }
 
-.no-video {
+.no-media {
     display: flex;
     align-items: center;
     justify-content: center;
