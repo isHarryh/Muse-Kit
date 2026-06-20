@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video Player - MediaSync</title>
+    <link rel="stylesheet" href="media_sync.css"></link>
+</head>
+
+<body>
+    <h2>Video Player - MediaSync</h2>
+
+    <!-- Connection -->
+    <div class="status-row">
+        <span class="dot" id="dot"></span>
+        <span class="status-text" id="statusText">Connecting</span>
+        <button class="reconnect-btn" id="reconnectBtn" hidden>Reconnect</button>
+    </div>
+
+    <!-- File picker -->
+    <div class="file-row">
+        <input type="file" id="fileInput">
+        <button class="file-btn" id="videoBtn">Choose Video</button>
+        <button class="file-btn" id="audioBtn">Choose Audio</button>
+        <span class="file-info" id="fileInfo">No file selected</span>
+    </div>
+
+    <!-- Media -->
+    <div class="media-wrap">
+        <video id="video" controls playsinline></video>
+        <audio id="audio" controls></audio>
+        <div class="no-video" id="noVideoMsg">Select a media file to begin</div>
+    </div>
+
+    <!-- Offset & Tolerance -->
+    <div class="sync-row">
+        <div class="sync-field">
+            <label for="offsetInput">Offset (s):</label>
+            <input type="number" id="offsetInput" value="0" step="0.1">
+        </div>
+        <div class="sync-field">
+            <label for="toleranceInput">Tolerance (ms):</label>
+            <input type="number" id="toleranceInput" value="100" step="10" min="10" max="1000">
+        </div>
+    </div>
+
+    <!-- Advanced Settings (collapsed by default) -->
+    <div class="section-header" id="advHeader">
+        <span class="arrow" id="advArrow">▶</span>
+        <span>Advanced Settings</span>
+    </div>
+    <div class="section-body" id="advBody">
+        <button class="danger-btn" id="clearStorageBtn">Clear Config Memory</button>
+    </div>
+
+    <!-- Debug log -->
+    <div class="section-header" id="logHeader">
+        <span class="arrow" id="logArrow">▶</span>
+        <span>WebSocket Log</span>
+    </div>
+    <pre id="log"></pre>
+
+    <script>
+        // DOM refs
+        var dot = document.getElementById('dot');
+        var statusText = document.getElementById('statusText');
+        var reconnectBtn = document.getElementById('reconnectBtn');
+        var fileInput = document.getElementById('fileInput');
+        var videoBtn = document.getElementById('videoBtn');
+        var audioBtn = document.getElementById('audioBtn');
+        var fileInfo = document.getElementById('fileInfo');
+        var video = document.getElementById('video');
+        var audio = document.getElementById('audio');
+        var noVideoMsg = document.getElementById('noVideoMsg');
+        var offsetInput = document.getElementById('offsetInput');
+        var toleranceInput = document.getElementById('toleranceInput');
+        var advHeader = document.getElementById('advHeader');
+        var advArrow = document.getElementById('advArrow');
+        var advBody = document.getElementById('advBody');
+        var clearStorageBtn = document.getElementById('clearStorageBtn');
+        var logEl = document.getElementById('log');
+        var logHeader = document.getElementById('logHeader');
+        var logArrow = document.getElementById('logArrow');
+
+        // State
+        var mediaReady = false;
+        var activeMedia = null;
+        var ws = null;
+
+        // Config storage
+        const STORAGE_KEY = 'media_sync_configs';
+
+        function loadConfigs() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+            } catch (e) { return {}; }
+        }
+
+        function saveConfigs(configs) {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
+            } catch (e) {
+                appendLog('[!] Failed to save settings to localStorage');
+            }
+        }
+
+        function applyConfigForFile(filename) {
+            var configs = loadConfigs();
+            var cfg = configs[filename];
+            // Always reset the UI: saved values when present, defaults otherwise.
+            offsetInput.value = (cfg && cfg.offset !== undefined) ? cfg.offset : 0;
+            toleranceInput.value = (cfg && cfg.tolerance !== undefined) ? cfg.tolerance : 100;
+            appendLog('[cfg] ' + (cfg ? 'Loaded saved' : 'Applied default') + ' settings for "' + filename + '"');
+        }
+
+        function saveConfigForFile(filename) {
+            var configs = loadConfigs();
+            configs[filename] = {
+                offset: parseFloat(offsetInput.value) || 0,
+                tolerance: parseInt(toleranceInput.value) || 100,
+                savedAt: new Date().toISOString()
+            };
+            saveConfigs(configs);
+            appendLog('[cfg] Saved settings for "' + filename + '"');
+        }
+
+        function clearAllConfigs() {
+            localStorage.removeItem(STORAGE_KEY);
+            appendLog('[cfg] All saved settings cleared');
+        }
+
+        // Helpers
+        function appendLog(text) {
+            var lines = logEl.textContent.trim().split('\n');
+            lines.push(text);
+            if (lines.length > 1000) lines = lines.slice(-1000);
+            logEl.textContent = lines.join('\n');
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function getOffset() {
+            var v = parseFloat(offsetInput.value);
+            return isNaN(v) ? 0 : v;
+        }
+
+        function getTolerance() {
+            var v = parseInt(toleranceInput.value);
+            return isNaN(v) ? 100 : v;
+        }
+
+        // Collapsible sections
+        function makeCollapsible(headerEl, arrowEl, bodyEl) {
+            headerEl.addEventListener('click', function () {
+                var open = bodyEl.classList.toggle('open');
+                arrowEl.classList.toggle('open', open);
+            });
+        }
+
+        makeCollapsible(logHeader, logArrow, logEl);
+        makeCollapsible(advHeader, advArrow, advBody);
+
+        // Advanced settings
+        clearStorageBtn.addEventListener('click', clearAllConfigs);
+
+        // Reconnect
+        reconnectBtn.addEventListener('click', function () {
+            reconnectBtn.hidden = true;
+            dot.className = 'dot';
+            statusText.textContent = 'Connecting';
+            appendLog('[+] Reconnecting to server at ' + WS_URL);
+            connectWS();
+        });
+
+        // File picker
+        videoBtn.addEventListener('click', function () {
+            fileInput.accept = 'video/*';
+            fileInput.click();
+        });
+
+        audioBtn.addEventListener('click', function () {
+            fileInput.accept = 'audio/*';
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', function () {
+            var file = fileInput.files[0];
+            if (!file) return;
+
+            // Pick the target element from the file's MIME type prefix.
+            var isAudio = file.type.indexOf('audio/') === 0;
+            activeMedia = isAudio ? audio : video;
+            var inactive = isAudio ? video : audio;
+
+            inactive.pause();
+            inactive.removeAttribute('src');
+            inactive.load();
+            inactive.style.display = 'none';
+            activeMedia.style.display = 'block';
+
+            fileInfo.textContent = file.name + ' (Loading)';
+            noVideoMsg.style.display = 'none';
+
+            applyConfigForFile(file.name);
+
+            activeMedia.src = URL.createObjectURL(file);
+            activeMedia.load();
+            mediaReady = false;
+        });
+
+        // Media events (shared by video and audio)
+        function wireMediaEvents(el) {
+            el.addEventListener('loadedmetadata', function () {
+                mediaReady = true;
+                var dur = el.duration;
+                var name = fileInput.files[0] ? fileInput.files[0].name : 'unknown';
+                fileInfo.textContent = name + '  (' + dur.toFixed(1) + 's)';
+            });
+
+            el.addEventListener('error', function () {
+                mediaReady = false;
+                fileInfo.textContent = 'Error loading media';
+            });
+        }
+
+        wireMediaEvents(video);
+        wireMediaEvents(audio);
+
+        // Config change events
+        offsetInput.addEventListener('change', function () {
+            if (fileInput.files[0]) {
+                saveConfigForFile(fileInput.files[0].name);
+            }
+        });
+
+        toleranceInput.addEventListener('change', function () {
+            if (fileInput.files[0]) {
+                saveConfigForFile(fileInput.files[0].name);
+            }
+        });
+
+        // WebSocket
+        const WS_URL = 'ws://localhost:8084';
+
+        function sendWS(msg) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                appendLog('[!] WS not connected');
+                return;
+            }
+            ws.send(msg);
+            appendLog('→ ' + msg);
+        }
+
+        function connectWS() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+            ws = new WebSocket(WS_URL);
+
+            reconnectBtn.hidden = true;
+
+            ws.onopen = function () {
+                sendWS('{"type":"client_hello"}');
+            };
+
+            ws.onmessage = function (e) {
+                appendLog('← ' + e.data);
+
+                try {
+                    var cmd = JSON.parse(e.data);
+                } catch (err) {
+                    appendLog('[!] Invalid message received');
+                    return;
+                }
+
+                // Lifecycle messages
+                if (cmd.type === 'server_hello') {
+                    dot.className = 'dot connected';
+                    statusText.textContent = 'Connected';
+                    return;
+                }
+
+                if (cmd.type === 'shutdown') {
+                    dot.className = 'dot disconnected';
+                    statusText.textContent = 'Shutdown';
+                    if (ws) {
+                        ws.onclose = null;
+                        ws.close();
+                        ws = null;
+                    }
+                    window.close();
+                    return;
+                }
+
+                if (!mediaReady) {
+                    appendLog('[!] No media loaded yet');
+                    return;
+                }
+
+                // Playback messages
+                var offset = getOffset();
+                var toleranceSec = getTolerance() / 1000; // ms to seconds
+                var targetTime;
+
+                switch (cmd.type) {
+                    case 'play':
+                        targetTime = cmd.position + offset;
+                        if (targetTime < 0) targetTime = 0;
+                        if (Math.abs(activeMedia.currentTime - targetTime) > toleranceSec) {
+                            activeMedia.currentTime = targetTime;
+                        }
+                        activeMedia.play().catch(function () { });
+                        break;
+
+                    case 'pause':
+                        activeMedia.pause();
+                        break;
+
+                    case 'seek':
+                        targetTime = cmd.position + offset;
+                        if (targetTime < 0) targetTime = 0;
+                        if (targetTime > activeMedia.duration) targetTime = activeMedia.duration;
+                        activeMedia.currentTime = targetTime;
+                        break;
+
+                    default:
+                        appendLog('[!] Unknown command type: ' + cmd.type);
+                }
+            };
+
+            ws.onclose = function () {
+                dot.className = 'dot disconnected';
+                statusText.textContent = 'Disconnected';
+                reconnectBtn.hidden = false;
+                appendLog('[!] WS disconnected');
+            };
+
+            ws.onerror = function () {
+                dot.className = 'dot disconnected';
+                statusText.textContent = 'Connection error';
+                reconnectBtn.hidden = false;
+                appendLog('[!] WS error');
+            };
+        }
+
+        // Start
+        connectWS();
+        appendLog('[+] Connecting to server at ' + WS_URL);
+    </script>
+</body>
+
+</html>
