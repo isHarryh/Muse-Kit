@@ -139,18 +139,39 @@ audio {
     font-style: italic;
 }
 
-/* ── Offset / Tolerance ─────────────────── */
-.sync-row {
+/* ── Config rows (grid) ─────────────────── */
+.config-row {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     margin-bottom: 12px;
     padding: 8px 12px;
+    min-height: 38px;
+    width: 100%;
     background: #222;
     border-radius: 6px;
     flex-wrap: wrap;
 }
 
+.row-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #666;
+    user-select: none;
+    min-width: 36px;
+}
+
+.row-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+}
+
+/* ── Sync fields ────────────────────────── */
 .sync-field {
     display: flex;
     align-items: center;
@@ -172,6 +193,40 @@ audio {
     border-radius: 4px;
     font-size: 0.85rem;
     text-align: center;
+}
+
+.audio-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.audio-field label {
+    font-size: 0.82rem;
+    white-space: nowrap;
+    color: #bbb;
+}
+
+.slider-label {
+    font-size: 0.78rem;
+    color: #888;
+    user-select: none;
+    min-width: 14px;
+    text-align: center;
+}
+
+.slider-value {
+    font-size: 0.78rem;
+    color: #4ea1ff;
+    min-width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+#panInput,
+#volumeInput {
+    width: 110px;
+    accent-color: #4ea1ff;
 }
 
 .sync-hint {
