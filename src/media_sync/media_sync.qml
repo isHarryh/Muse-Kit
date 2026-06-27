@@ -1,6 +1,7 @@
 // Copyright (c) 2026, Harry Huang
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import MuseScore 3.0
 import MuseScore.Playback 1.0
 import Muse.UiComponents
@@ -15,7 +16,7 @@ MuseScore {
     thumbnailName: "media_sync.png"
 
     width: 360
-    height: 270
+    height: 90
 
     // Playback model of MuseScore
     PlaybackToolBarModel {
@@ -210,6 +211,7 @@ MuseScore {
     // Cleanup
     Component.onDestruction: {
         playbackMonitor.running = false;
+        logWindow.visible = false;
         if (clientSocketId >= 0 && wsConnected) {
             sendToBrowser('{"type":"shutdown"}');
         }
@@ -221,13 +223,19 @@ MuseScore {
         anchors.margins: 14
         spacing: 8
 
-        StyledTextLabel {
-            id: positionLabel
-            text: "Position: " + formatPosition(playbackPosition)
-        }
-
         RowLayout {
+            Layout.fillWidth: true
             spacing: 6
+
+            StyledTextLabel {
+                id: positionLabel
+                text: "Position: " + formatPosition(playbackPosition)
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
             StyledTextLabel {
                 text: "Status:"
             }
@@ -248,46 +256,55 @@ MuseScore {
             Layout.fillWidth: true
         }
 
-        StyledTextLabel {
-            text: "WebSocket Log:"
-        }
-
-        Rectangle {
+        RowLayout {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            color: "#1e1e1e"
-            border.width: 1
-            border.color: ui.theme.strokeColor
-            radius: 4
+            spacing: 8
 
-            Flickable {
-                id: flick
-                anchors.fill: parent
-                anchors.margins: 6
-                contentHeight: logText.implicitHeight
-                clip: true
+            FlatButton {
+                text: "Debug"
+                Layout.fillWidth: true
+                onClicked: logWindow.visible = true
+            }
 
-                Text {
-                    id: logText
-                    width: flick.width
-                    text: debugLog || "(no messages)"
-                    color: "#aaa"
-                    font.family: "Consolas"
-                    font.pixelSize: 11
-                    wrapMode: Text.Wrap
+            FlatButton {
+                text: "Close"
+                Layout.fillWidth: true
+                onClicked: {
+                    playbackMonitor.running = false;
+                    logWindow.visible = false;
+                    if (clientSocketId >= 0 && wsConnected) {
+                        sendToBrowser('{"type":"shutdown"}');
+                    }
+                    quit();
                 }
             }
         }
+    }
 
-        FlatButton {
-            text: "Close"
-            Layout.alignment: Qt.AlignRight
-            onClicked: {
-                playbackMonitor.running = false;
-                if (clientSocketId >= 0 && wsConnected) {
-                    sendToBrowser('{"type":"shutdown"}');
-                }
-                quit();
+    // Separate window for the WebSocket log, keeping the main dialog simple.
+    Window {
+        id: logWindow
+        title: "MuseKit: MediaSync Debug"
+        width: 360
+        height: 90
+        color: "#1e1e1e"
+        flags: Qt.Dialog
+
+        Flickable {
+            id: flick
+            anchors.fill: parent
+            anchors.margins: 8
+            contentHeight: logText.implicitHeight
+            clip: true
+
+            Text {
+                id: logText
+                width: flick.width
+                text: debugLog || "(no messages)"
+                color: "#aaa"
+                font.family: "Consolas"
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
             }
         }
     }
