@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Media Player - MediaSync</title>
     <link rel="stylesheet" href="media_sync.css"></link>
+    <script src="lib_nnls.js"></script>
+    <script src="lib_chordino.js"></script>
 </head>
 
 <body>
@@ -31,6 +33,30 @@
         <video id="video" controls playsinline></video>
         <audio id="audio" controls></audio>
         <div class="no-media" id="noMediaMsg">Select a media file to begin</div>
+    </div>
+
+    <!-- Chord Detection -->
+    <div class="config-row chord-row">
+        <span class="row-title">Chord</span>
+        <div class="row-fields">
+            <div class="chord-toggle-field">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="chordToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="chord-toggle-label" id="chordToggleLabel">Off</span>
+            </div>
+            <div class="chord-display" id="chordDisplay">
+                <span class="chord-name" id="chordName">--</span>
+                <span class="chord-time" id="chordTime"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chord Timeline -->
+    <div class="chord-timeline-wrap" id="chordTimelineWrap">
+        <div class="chord-timeline" id="chordTimeline"></div>
+        <div class="chord-playhead" id="chordPlayhead"></div>
     </div>
 
     <!-- Sync Settings -->
@@ -110,6 +136,14 @@
         var logEl = document.getElementById('log');
         var logHeader = document.getElementById('logHeader');
         var logArrow = document.getElementById('logArrow');
+        var chordToggle = document.getElementById('chordToggle');
+        var chordToggleLabel = document.getElementById('chordToggleLabel');
+        var chordName = document.getElementById('chordName');
+        var chordDisplay = document.getElementById('chordDisplay');
+        var chordTimeEl = document.getElementById('chordTime');
+        var chordTimeline = document.getElementById('chordTimeline');
+        var chordTimelineWrap = document.getElementById('chordTimelineWrap');
+        var chordPlayhead = document.getElementById('chordPlayhead');
 
         // State
         var mediaReady = false;
@@ -121,6 +155,15 @@
         var panner = null;
         var gainNode = null;
         var sourceMap = new WeakMap();
+
+        // Chord detection state (Chordino offline)
+        var chordEnabled = false;
+        var mediaFile = null;           // File object for offline decoding
+        var chordProcessing = false;    // true while analysis is running
+
+        // Chord timeline state
+        var chordTimelineData = []; // [{ time, endTime, chord, root, cssRoot, suffix, confidence, altLabel, candidates }, ...]
+        var PX_PER_SECOND = 60;
 
         function ensureAudioGraph(el) {
             if (!audioCtx) {
@@ -257,6 +300,7 @@
             var isAudio = file.type.indexOf('audio/') === 0;
             activeMedia = isAudio ? audio : video;
             var inactive = isAudio ? video : audio;
+            mediaFile = file;  // store for offline chord analysis
 
             inactive.pause();
             inactive.removeAttribute('src');
@@ -275,6 +319,7 @@
             activeMedia.src = URL.createObjectURL(file);
             activeMedia.load();
             mediaReady = false;
+            resetChordDisplay();
         });
 
         // Media events (shared by video and audio)
@@ -284,6 +329,9 @@
                 var dur = el.duration;
                 var name = fileInput.files[0] ? fileInput.files[0].name : 'unknown';
                 fileInfo.textContent = name + '  (' + dur.toFixed(1) + 's)';
+                chordTimeline.style.width = (dur * PX_PER_SECOND) + 'px';
+                // Auto-run chord analysis if chord mode is already enabled
+                if (chordEnabled) runChordAnalysis();
             });
 
             el.addEventListener('error', function () {
@@ -331,6 +379,109 @@
         volumeInput.addEventListener('change', function () {
             if (fileInput.files[0]) {
                 saveConfigForFile(fileInput.files[0].name);
+            }
+        });
+
+        // Chord detection (Chordino offline)
+        function resetChordDisplay() {
+            chordName.textContent = '--';
+            chordTimelineData = [];
+            chordTimeline.innerHTML = '';
+            chordPlayhead.style.transform = '';
+            chordTimeline.style.transform = 'translateX(0px)';
+            chordTimeline.style.width = '0px';
+            chordTimeEl.textContent = '';
+            chordProcessing = false;
+        }
+
+        // Timeline batch rendering
+        function renderAllTimelineBlocks(results) {
+            chordTimeline.innerHTML = '';
+            chordTimeline.style.width = activeMedia ?
+                Math.ceil(activeMedia.duration * PX_PER_SECOND) + 'px' : '0px';
+
+            for (var i = 0; i < results.length; i++) {
+                var entry = results[i];
+                var block = document.createElement('div');
+                block.className = 'chord-block root-' + entry.cssRoot;
+                var leftPx = Math.round(entry.time * PX_PER_SECOND);
+                var rightPx = Math.round(entry.endTime * PX_PER_SECOND);
+                block.style.left = leftPx + 'px';
+                block.style.width = Math.max(2, rightPx - leftPx) + 'px';
+
+                var labelText = entry.altLabel || entry.chord;
+                block.textContent = labelText;
+                chordTimeline.appendChild(block);
+            }
+        }
+
+        // Offline chord analysis
+        function runChordAnalysis() {
+            if (!mediaFile || chordProcessing) return;
+            chordProcessing = true;
+            chordTimeEl.textContent = 'Processing: 0%';
+
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                audioCtx.decodeAudioData(e.target.result, function (audioBuffer) {
+                    var chordino = new Chordino(audioCtx.sampleRate, {
+                        onProgress: function (p) {
+                            chordTimeEl.textContent = 'Processing: ' + Math.round(p * 100) + '%';
+                        }
+                    });
+                    chordino.process(audioBuffer, function (results) {
+                        chordTimelineData = results;
+                        renderAllTimelineBlocks(results);
+                        chordProcessing = false;
+                        chordTimeEl.textContent = '';
+                    });
+                }, function () {
+                    chordProcessing = false;
+                    chordTimeEl.textContent = 'Decode error';
+                });
+            };
+            reader.onerror = function () {
+                chordProcessing = false;
+                chordTimeEl.textContent = 'Read error';
+            };
+            reader.readAsArrayBuffer(mediaFile);
+        }
+
+        // Playhead tracking and chord display
+        function updateChordPlayhead() {
+            requestAnimationFrame(updateChordPlayhead);
+            if (!chordEnabled || !activeMedia || !activeMedia.duration) return;
+
+            // Update playhead position via timeline content translate
+            var playheadX = activeMedia.currentTime * PX_PER_SECOND;
+            var wrapWidth = chordTimelineWrap.clientWidth;
+            chordTimeline.style.transform = 'translateX(' + (wrapWidth / 2 - playheadX) + 'px)';
+
+            // Display the chord at the current playback position
+            var currentTime = activeMedia.currentTime;
+            var currentChord = '--';
+            var currentAlt = null;
+            for (var i = 0; i < chordTimelineData.length; i++) {
+                if (chordTimelineData[i].time <= currentTime &&
+                    chordTimelineData[i].endTime > currentTime) {
+                    currentChord = chordTimelineData[i].chord;
+                    currentAlt = chordTimelineData[i].altLabel;
+                    break;
+                }
+            }
+            chordName.textContent = currentAlt || currentChord;
+        }
+        updateChordPlayhead();  // start the playhead loop (dormant until chordEnabled)
+
+        chordToggle.addEventListener('change', function () {
+            chordEnabled = chordToggle.checked;
+            chordToggleLabel.textContent = chordEnabled ? 'On' : 'Off';
+            chordDisplay.classList.toggle('active', chordEnabled);
+            chordTimelineWrap.classList.toggle('open', chordEnabled);
+            if (chordEnabled) {
+                runChordAnalysis();
+            } else {
+                resetChordDisplay();
             }
         });
 
