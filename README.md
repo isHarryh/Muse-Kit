@@ -53,6 +53,8 @@ In [`src`](src/) directory of this repository, you can find the following plugin
 
 When you play, pause or change the playback position in MuseScore, the media file will be controlled accordingly. You can also adjust the synchronization offset and tolerance for each media file to achieve better experience.
 
+Furthermore, MediaSync can also estimate the chord progression of the media file and display it in a timeline in the browser, helping you to transcribe the music more easily.
+
 ## Licensing
 
 This project is licensed under the MIT License. See the [License](https://github.com/isHarryh/Muse-Kit/blob/main/LICENSE) file for more details.
