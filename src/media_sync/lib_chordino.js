@@ -335,7 +335,6 @@ function stateToChord(state) {
 
 function ChordinoConstructor(sampleRate, options = {}) {
     const {
-        useNNLS = true,
         whitening = 1,
         boostN = 0.1,
         spectralShape = 0.7,
@@ -492,11 +491,11 @@ function ChordinoConstructor(sampleRate, options = {}) {
                     white[i] = std[i] > 0 && dev > 0 ? dev / (std[i] ** whitening) : 0;
                 }
 
-                // NNLS or simple binning → chroma
+                // NNLS → chroma
                 const chroma = new Float32Array(24);
                 const hasSignal = white.some(v => v > 0);
 
-                if (hasSignal && useNNLS && NNLS?.nnls) {
+                if (hasSignal && NNLS?.nnls) {
                     // Find significant semitones
                     const sig = [];
                     let idx = 0;
@@ -521,15 +520,6 @@ function ChordinoConstructor(sampleRate, options = {}) {
                             chroma[s % 12] += x[n] * treblewindow[s];
                             chroma[12 + s % 12] += x[n] * basswindow[s];
                         }
-                    }
-                } else if (hasSignal) {
-                    let si = 0;
-                    for (let n = (BPS >> 1) + 2; n < N_NOTE - (BPS >> 1); n += BPS) {
-                        let v = 0;
-                        for (let b = -(BPS >> 1); b <= (BPS >> 1); b++) v += white[n + b] * (1 - Math.abs(b / ((BPS >> 1) + 1)));
-                        chroma[si % 12] += v * treblewindow[si];
-                        chroma[12 + si % 12] += v * basswindow[si];
-                        si++;
                     }
                 }
 
