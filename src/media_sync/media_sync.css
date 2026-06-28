@@ -406,66 +406,170 @@ audio {
     text-align: right;
 }
 
-/* ── Chord timeline ─────────────────────── */
-.chord-timeline-wrap {
+/* ── Timeline ────────────────────────────── */
+.timeline-wrap {
     margin-bottom: 12px;
+    display: none;
+}
+
+.timeline-wrap.open {
+    display: block;
+}
+
+.timeline-root {
+    width: 100%;
     background: #111;
     border: 1px solid #333;
     border-radius: 6px;
     overflow: hidden;
-    position: relative;
-    display: none;
+    user-select: none;
+    --timeline-label-width: 76px;
+    --timeline-ruler-height: 24px;
 }
 
-.chord-timeline-wrap.open {
+.timeline-ruler-canvas {
     display: block;
+    width: 100%;
+    height: var(--timeline-ruler-height);
+    cursor: ew-resize;
 }
 
-.chord-timeline {
+.timeline-body {
+    display: flex;
     position: relative;
-    height: 48px;
+    background: #141414;
 }
 
-.chord-block {
+.timeline-labels {
+    flex: 0 0 var(--timeline-label-width);
+    width: var(--timeline-label-width);
+    background: #202020;
+    border-right: 1px solid #333;
+    z-index: 3;
+}
+
+.timeline-track-label {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    border-bottom: 1px solid #2a2a2a;
+    color: #888;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.timeline-viewport {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    cursor: grab;
+}
+
+.timeline-root.scrubbing .timeline-viewport {
+    cursor: grabbing;
+}
+
+.timeline-grid-canvas {
     position: absolute;
-    top: 0;
-    height: 100%;
-    border-right: 1px solid #1a1a1a;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.timeline-tracks {
+    position: relative;
+    z-index: 1;
+    will-change: transform;
+}
+
+.timeline-track {
+    position: relative;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.timeline-track-score {
+    background: rgba(78, 161, 255, 0.04);
+}
+
+.timeline-track-media {
+    background: rgba(76, 175, 80, 0.04);
+}
+
+.timeline-track-chords {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.timeline-item {
+    position: absolute;
+    top: 5px;
+    height: calc(100% - 10px);
+    min-width: 2px;
+    border-radius: 4px;
+    border-right: 1px solid rgba(0, 0, 0, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     white-space: nowrap;
+    text-overflow: ellipsis;
+    padding: 0 6px;
     font-size: 0.7rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.88);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    user-select: none;
+    pointer-events: auto;
 }
 
-.chord-playhead {
+.timeline-item-label {
+    position: absolute;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.timeline-item-score {
+    background: #295a8a;
+}
+
+.timeline-item-media {
+    background: #2d6b35;
+}
+
+.timeline-playhead {
     position: absolute;
     top: 0;
     bottom: 0;
     width: 2px;
     background: #f44336;
-    z-index: 2;
+    z-index: 4;
     pointer-events: none;
-    left: 50%;
     transform: translateX(-50%);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
 /* Root-note colors (HSL hue wheel, 30° apart) */
-.chord-block.root--1 { background: hsl(0, 0%, 18%); } /* N (no chord) */
-.chord-block.root-0  { background: hsl(0,   50%, 35%); } /* C   */
-.chord-block.root-1  { background: hsl(30,  50%, 35%); } /* C#  */
-.chord-block.root-2  { background: hsl(60,  50%, 35%); } /* D   */
-.chord-block.root-3  { background: hsl(90,  50%, 35%); } /* D#  */
-.chord-block.root-4  { background: hsl(120, 50%, 35%); } /* E   */
-.chord-block.root-5  { background: hsl(150, 50%, 35%); } /* F   */
-.chord-block.root-6  { background: hsl(180, 50%, 35%); } /* F#  */
-.chord-block.root-7  { background: hsl(210, 50%, 35%); } /* G   */
-.chord-block.root-8  { background: hsl(240, 50%, 35%); } /* G#  */
-.chord-block.root-9  { background: hsl(270, 50%, 35%); } /* A   */
-.chord-block.root-10 { background: hsl(300, 50%, 35%); } /* A#  */
-.chord-block.root-11 { background: hsl(330, 50%, 35%); } /* B   */
+.timeline-item.root--1 { background: hsl(0, 0%, 18%); } /* N (no chord) */
+.timeline-item.root-0  { background: hsl(0,   50%, 35%); } /* C   */
+.timeline-item.root-1  { background: hsl(30,  50%, 35%); } /* C#  */
+.timeline-item.root-2  { background: hsl(60,  50%, 35%); } /* D   */
+.timeline-item.root-3  { background: hsl(90,  50%, 35%); } /* D#  */
+.timeline-item.root-4  { background: hsl(120, 50%, 35%); } /* E   */
+.timeline-item.root-5  { background: hsl(150, 50%, 35%); } /* F   */
+.timeline-item.root-6  { background: hsl(180, 50%, 35%); } /* F#  */
+.timeline-item.root-7  { background: hsl(210, 50%, 35%); } /* G   */
+.timeline-item.root-8  { background: hsl(240, 50%, 35%); } /* G#  */
+.timeline-item.root-9  { background: hsl(270, 50%, 35%); } /* A   */
+.timeline-item.root-10 { background: hsl(300, 50%, 35%); } /* A#  */
+.timeline-item.root-11 { background: hsl(330, 50%, 35%); } /* B   */

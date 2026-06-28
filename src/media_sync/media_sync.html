@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="media_sync.css"></link>
     <script src="lib_nnls.js"></script>
     <script src="lib_chordino.js"></script>
+    <script src="lib_timeline.js"></script>
 </head>
 
 <body>
@@ -53,10 +54,9 @@
         </div>
     </div>
 
-    <!-- Chord Timeline -->
-    <div class="chord-timeline-wrap" id="chordTimelineWrap">
-        <div class="chord-timeline" id="chordTimeline"></div>
-        <div class="chord-playhead" id="chordPlayhead"></div>
+    <!-- Timeline -->
+    <div class="timeline-wrap" id="timelineWrap">
+        <div id="timelineRoot"></div>
     </div>
 
     <!-- Sync Settings -->
@@ -141,9 +141,8 @@
         var chordName = document.getElementById('chordName');
         var chordDisplay = document.getElementById('chordDisplay');
         var chordTimeEl = document.getElementById('chordTime');
-        var chordTimeline = document.getElementById('chordTimeline');
-        var chordTimelineWrap = document.getElementById('chordTimelineWrap');
-        var chordPlayhead = document.getElementById('chordPlayhead');
+        var timelineWrap = document.getElementById('timelineWrap');
+        var timelineRoot = document.getElementById('timelineRoot');
 
         // State
         var mediaReady = false;
@@ -161,9 +160,12 @@
         var mediaFile = null;           // File object for offline decoding
         var chordProcessing = false;    // true while analysis is running
 
-        // Chord timeline state
+        // Timeline state
         var chordTimelineData = []; // [{ time, endTime, chord, root, cssRoot, suffix, confidence, altLabel, candidates }, ...]
-        var PX_PER_SECOND = 60;
+        var timeline = null;
+        var scoreDuration = 0;
+        var scorePosition = 0;
+        var lastTimelineSeek = null;
 
         function ensureAudioGraph(el) {
             if (!audioCtx) {
@@ -258,6 +260,152 @@
             return isNaN(v) ? 100 : v;
         }
 
+        function formatTimelineTime(seconds, step) {
+            var sign = seconds < 0 ? '-' : '';
+            var abs = Math.abs(seconds);
+            var h = Math.floor(abs / 3600);
+            var m = Math.floor((abs % 3600) / 60);
+            var s = Math.floor(abs % 60);
+            var ms = Math.round((abs % 1) * 1000);
+            function pad2(value) { return value < 10 ? '0' + value : '' + value; }
+            function pad3(value) { return value < 10 ? '00' + value : value < 100 ? '0' + value : '' + value; }
+            var showMs = step < 1;
+            var base = h > 0 ? sign + h + ':' + pad2(m) + ':' + pad2(s) : sign + m + ':' + pad2(s);
+            return showMs ? base + '.' + pad3(ms) : base;
+        }
+
+        function initTimeline() {
+            timeline = Timeline.create(timelineRoot, {
+                pxPerSecond: 60,
+                minPxPerSecond: 10,
+                maxPxPerSecond: 400,
+                trackHeight: 34,
+                rulerHeight: 24,
+                labelWidth: 76,
+                playheadMode: 'centered',
+                labelFormatter: formatTimelineTime
+            });
+            timeline.on('scrubmove', function (event) {
+                if (!activeMedia || !activeMedia.duration) return;
+                activeMedia.currentTime = Math.max(0, Math.min(event.time, activeMedia.duration));
+            });
+            timeline.on('seekrequest', function (event) {
+                handleTimelineSeekRequest(event.time);
+            });
+            refreshTimelineTracks();
+        }
+
+        function getMediaDuration() {
+            return activeMedia && mediaReady && activeMedia.duration ? activeMedia.duration : 0;
+        }
+
+        function mapChordResultsToItems(results) {
+            var items = [];
+            for (var i = 0; i < results.length; i++) {
+                var entry = results[i];
+                items.push({
+                    id: 'chord-' + i,
+                    type: 'strip',
+                    start: entry.time,
+                    end: entry.endTime,
+                    label: entry.altLabel || entry.chord,
+                    className: 'timeline-item-chord root-' + entry.cssRoot,
+                    meta: entry
+                });
+            }
+            return items;
+        }
+
+        function buildTimelineTracks() {
+            var tracks = [];
+            var offset = getOffset();
+            var mediaDuration = getMediaDuration();
+
+            if (scoreDuration > 0) {
+                tracks.push({
+                    id: 'score',
+                    label: 'Score',
+                    order: 1,
+                    kind: 'score',
+                    items: [{
+                        id: 'score-strip',
+                        type: 'strip',
+                        start: offset,
+                        end: offset + scoreDuration,
+                        label: 'MuseScore',
+                        className: 'timeline-item-score'
+                    }]
+                });
+            }
+
+            if (mediaDuration > 0) {
+                tracks.push({
+                    id: 'media',
+                    label: 'Media',
+                    order: 2,
+                    kind: 'media',
+                    items: [{
+                        id: 'media-strip',
+                        type: 'strip',
+                        start: 0,
+                        end: mediaDuration,
+                        label: fileInput.files[0] ? fileInput.files[0].name : 'Media',
+                        className: 'timeline-item-media'
+                    }]
+                });
+            }
+
+            if (chordEnabled && chordTimelineData.length > 0) {
+                tracks.push({
+                    id: 'chords',
+                    label: 'Chords',
+                    order: 3,
+                    kind: 'chords',
+                    items: mapChordResultsToItems(chordTimelineData)
+                });
+            }
+
+            return tracks;
+        }
+
+        function refreshTimelineRange() {
+            if (!timeline) return;
+            var offset = getOffset();
+            var mediaDuration = getMediaDuration();
+            var rangeStart = 0;
+            var rangeEnd = Math.max(10, mediaDuration);
+
+            if (scoreDuration > 0) {
+                rangeStart = Math.min(rangeStart, offset);
+                rangeEnd = Math.max(rangeEnd, offset + scoreDuration);
+            }
+
+            timeline.setRange(rangeStart, rangeEnd);
+        }
+
+        function refreshTimelineTracks() {
+            if (!timeline) return;
+            var tracks = buildTimelineTracks();
+            refreshTimelineRange();
+            timeline.setTracks(tracks);
+            timelineWrap.classList.toggle('open', tracks.length > 0);
+        }
+
+        function syncTimelinePlayhead() {
+            if (!timeline || !activeMedia || !activeMedia.duration) return;
+            timeline.setCurrentTime(activeMedia.currentTime, { source: 'playback' });
+        }
+
+        function handleTimelineSeekRequest(mediaTime) {
+            if (!activeMedia || !activeMedia.duration) return;
+            var clampedMediaTime = Math.max(0, Math.min(mediaTime, activeMedia.duration));
+            activeMedia.currentTime = clampedMediaTime;
+            lastTimelineSeek = { mediaTime: clampedMediaTime, at: Date.now() };
+            var scoreTime = clampedMediaTime - getOffset();
+            if (scoreTime < 0) scoreTime = 0;
+            sendWS(JSON.stringify({ type: 'client_seek', position: Number(scoreTime.toFixed(3)) }));
+        }
+
         // Collapsible sections
         function makeCollapsible(headerEl, arrowEl, bodyEl) {
             headerEl.addEventListener('click', function () {
@@ -320,6 +468,7 @@
             activeMedia.load();
             mediaReady = false;
             resetChordDisplay();
+            refreshTimelineTracks();
         });
 
         // Media events (shared by video and audio)
@@ -329,7 +478,7 @@
                 var dur = el.duration;
                 var name = fileInput.files[0] ? fileInput.files[0].name : 'unknown';
                 fileInfo.textContent = name + '  (' + dur.toFixed(1) + 's)';
-                chordTimeline.style.width = (dur * PX_PER_SECOND) + 'px';
+                refreshTimelineTracks();
                 // Auto-run chord analysis if chord mode is already enabled
                 if (chordEnabled) runChordAnalysis();
             });
@@ -338,6 +487,21 @@
                 mediaReady = false;
                 fileInfo.textContent = 'Error loading media';
             });
+
+            // Send playback state to server
+            // el.addEventListener('play', function () {
+            //     var mediaTime = el.currentTime;
+            //     var scoreTime = mediaTime - getOffset();
+            //     if (scoreTime < 0) scoreTime = 0;
+            //     sendWS(JSON.stringify({ type: 'client_play', position: Number(scoreTime.toFixed(3)) }));
+            // });
+
+            // el.addEventListener('pause', function () {
+            //     var mediaTime = el.currentTime;
+            //     var scoreTime = mediaTime - getOffset();
+            //     if (scoreTime < 0) scoreTime = 0;
+            //     sendWS(JSON.stringify({ type: 'client_pause', position: Number(scoreTime.toFixed(3)) }));
+            // });
         }
 
         wireMediaEvents(video);
@@ -348,6 +512,7 @@
             if (fileInput.files[0]) {
                 saveConfigForFile(fileInput.files[0].name);
             }
+            refreshTimelineTracks();
         });
 
         toleranceInput.addEventListener('change', function () {
@@ -386,33 +551,9 @@
         function resetChordDisplay() {
             chordName.textContent = '--';
             chordTimelineData = [];
-            chordTimeline.innerHTML = '';
-            chordPlayhead.style.transform = '';
-            chordTimeline.style.transform = 'translateX(0px)';
-            chordTimeline.style.width = '0px';
             chordTimeEl.textContent = '';
             chordProcessing = false;
-        }
-
-        // Timeline batch rendering
-        function renderAllTimelineBlocks(results) {
-            chordTimeline.innerHTML = '';
-            chordTimeline.style.width = activeMedia ?
-                Math.ceil(activeMedia.duration * PX_PER_SECOND) + 'px' : '0px';
-
-            for (var i = 0; i < results.length; i++) {
-                var entry = results[i];
-                var block = document.createElement('div');
-                block.className = 'chord-block root-' + entry.cssRoot;
-                var leftPx = Math.round(entry.time * PX_PER_SECOND);
-                var rightPx = Math.round(entry.endTime * PX_PER_SECOND);
-                block.style.left = leftPx + 'px';
-                block.style.width = Math.max(2, rightPx - leftPx) + 'px';
-
-                var labelText = entry.altLabel || entry.chord;
-                block.textContent = labelText;
-                chordTimeline.appendChild(block);
-            }
+            refreshTimelineTracks();
         }
 
         // Offline chord analysis
@@ -431,7 +572,7 @@
                     });
                     chordino.process(audioBuffer, function (results) {
                         chordTimelineData = results;
-                        renderAllTimelineBlocks(results);
+                        refreshTimelineTracks();
                         chordProcessing = false;
                         chordTimeEl.textContent = '';
                     });
@@ -447,15 +588,11 @@
             reader.readAsArrayBuffer(mediaFile);
         }
 
-        // Playhead tracking and chord display
-        function updateChordPlayhead() {
-            requestAnimationFrame(updateChordPlayhead);
+        // Timeline and chord display tracking
+        function updateTimelinePlayback() {
+            requestAnimationFrame(updateTimelinePlayback);
+            syncTimelinePlayhead();
             if (!chordEnabled || !activeMedia || !activeMedia.duration) return;
-
-            // Update playhead position via timeline content translate
-            var playheadX = activeMedia.currentTime * PX_PER_SECOND;
-            var wrapWidth = chordTimelineWrap.clientWidth;
-            chordTimeline.style.transform = 'translateX(' + (wrapWidth / 2 - playheadX) + 'px)';
 
             // Display the chord at the current playback position
             var currentTime = activeMedia.currentTime;
@@ -471,18 +608,18 @@
             }
             chordName.textContent = currentAlt || currentChord;
         }
-        updateChordPlayhead();  // start the playhead loop (dormant until chordEnabled)
+        updateTimelinePlayback();
 
         chordToggle.addEventListener('change', function () {
             chordEnabled = chordToggle.checked;
             chordToggleLabel.textContent = chordEnabled ? 'On' : 'Off';
             chordDisplay.classList.toggle('active', chordEnabled);
-            chordTimelineWrap.classList.toggle('open', chordEnabled);
             if (chordEnabled) {
                 runChordAnalysis();
             } else {
                 resetChordDisplay();
             }
+            refreshTimelineTracks();
         });
 
         // WebSocket
@@ -537,6 +674,11 @@
                     return;
                 }
 
+                if (cmd.total !== undefined) {
+                    scoreDuration = Number(cmd.total) || 0;
+                    refreshTimelineTracks();
+                }
+
                 if (!mediaReady) {
                     appendLog('[!] No media loaded yet');
                     return;
@@ -548,7 +690,8 @@
                 var targetTime;
 
                 switch (cmd.type) {
-                    case 'play':
+                    case 'server_play':
+                        scorePosition = Number(cmd.position) || 0;
                         targetTime = cmd.position + offset;
                         if (targetTime < 0) targetTime = 0;
                         if (Math.abs(activeMedia.currentTime - targetTime) > toleranceSec) {
@@ -557,11 +700,13 @@
                         activeMedia.play().catch(function () { });
                         break;
 
-                    case 'pause':
+                    case 'server_pause':
+                        scorePosition = Number(cmd.position) || scorePosition;
                         activeMedia.pause();
                         break;
 
-                    case 'seek':
+                    case 'server_seek':
+                        scorePosition = Number(cmd.position) || 0;
                         targetTime = cmd.position + offset;
                         if (targetTime < 0) targetTime = 0;
                         if (targetTime > activeMedia.duration) targetTime = activeMedia.duration;
@@ -589,6 +734,7 @@
         }
 
         // Start
+        initTimeline();
         connectWS();
         appendLog('[+] Connecting to server at ' + WS_URL);
     </script>

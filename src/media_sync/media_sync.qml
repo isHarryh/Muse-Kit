@@ -77,6 +77,39 @@ MuseScore {
         return pad2(h) + ":" + pad2(m) + ":" + pad2(sec) + "." + ("00" + ms).slice(-3);
     }
 
+    function getScoreDuration() {
+        try {
+            const key = "max" + "PlayTime";
+            return qTimeToSeconds(playbackModel[key]);
+        } catch (e) {
+            appendLog("[!] Failed to read score duration: " + e);
+            return 0;
+        }
+    }
+
+    function sendPlaybackState(type, position) {
+        var total = getScoreDuration();
+        sendToBrowser('{"type":"' + type + '","position":' + position.toFixed(3) +
+            ',"total":' + total.toFixed(3) + '}');
+    }
+
+    function seekPlayback(position) {
+        var target = Math.max(0, position);
+        var duration = getScoreDuration();
+        if (duration > 0 && target > duration)
+            target = duration;
+
+        try {
+            playbackModel.playTime = secondsToQTime(target);
+            playbackPosition = target;
+            sendPlaybackState("server_seek", target);
+            return true;
+        } catch (e) {
+            appendLog("[!] Failed to seek score: " + e);
+            return false;
+        }
+    }
+
     // WebSocket communication
     function sendToBrowser(msg) {
         if (clientSocketId < 0) {
@@ -109,10 +142,16 @@ MuseScore {
             return;
         }
 
-        // Handle different message types
         if (cmd.type === "client_hello") {
             wsHandshaken = true;
             sendToBrowser('{"type":"server_hello"}');
+            sendPlaybackState(isPlaying ? "server_play" : "server_pause", playbackPosition);
+            return;
+        }
+
+        if (cmd.type === "client_seek") {
+            seekPlayback(cmd.position || 0);
+            return;
         }
     }
 
@@ -178,10 +217,10 @@ MuseScore {
             // Immediate send: play/pause transition
             if (isPlaying !== wasPlaying) {
                 if (isPlaying) {
-                    sendToBrowser('{"type":"play","position":' + pos.toFixed(3) + '}');
+                    sendPlaybackState("server_play", pos);
                     lastPeriodicSentPos = pos;
                 } else {
-                    sendToBrowser('{"type":"pause","position":' + pos.toFixed(3) + '}');
+                    sendPlaybackState("server_pause", pos);
                 }
                 return;
             }
@@ -189,10 +228,10 @@ MuseScore {
             // Immediate send: position jumped >100ms since last poll
             if (delta > 0.1) {
                 if (isPlaying) {
-                    sendToBrowser('{"type":"play","position":' + pos.toFixed(3) + '}');
+                    sendPlaybackState("server_play", pos);
                     lastPeriodicSentPos = pos;
                 } else {
-                    sendToBrowser('{"type":"seek","position":' + pos.toFixed(3) + '}');
+                    sendPlaybackState("server_seek", pos);
                 }
                 return;
             }
@@ -201,7 +240,7 @@ MuseScore {
             if (isPlaying) {
                 let elapsed = Math.abs(pos - lastPeriodicSentPos);
                 if (elapsed >= 1.0 || lastPeriodicSentPos < 0) {
-                    sendToBrowser('{"type":"play","position":' + pos.toFixed(3) + '}');
+                    sendPlaybackState("server_play", pos);
                     lastPeriodicSentPos = pos;
                 }
             }
