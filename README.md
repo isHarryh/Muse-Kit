@@ -1,7 +1,7 @@
 # Muse-Kit
 
-My MuseScore Plugin Kit: Score media sync and more  
-我的 MuseScore 插件套组：乐谱媒体同步和更多功能
+My MuseScore Plugin Kit: Score media sync, Tap BPM and more  
+我的 MuseScore 插件套组：乐谱媒体同步、节拍速度预测和更多功能
 
 ## Introduction
 
@@ -54,6 +54,12 @@ In [`src`](src/) directory of this repository, you can find the following plugin
 When you play, pause or change the playback position in MuseScore, the media file will be controlled accordingly. You can also adjust the synchronization offset and tolerance for each media file to achieve better experience.
 
 Furthermore, MediaSync can also estimate the chord progression of the media file and display it in a timeline in the browser, helping you to transcribe the music more easily.
+
+### Tap BPM
+
+<img src="src/tap_bpm/tap_bpm.png" alt="Tap BPM Logo" width="256"/>
+
+🧩 **Tap BPM** is a lightweight tempo helper that estimates BPM from repeated taps. You can click the "Tap" button to find the tempo. There're various parameters can be adjusted in order to meet your needs.
 
 ## Licensing
 
